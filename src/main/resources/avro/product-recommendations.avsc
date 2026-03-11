@@ -1,0 +1,36 @@
+{
+  "namespace": "com.nuskin.prysm.avro.product",
+  "type": "record",
+  "name": "ProductRecommendation",
+  "doc": "Personalised product recommendation produced by the Flink RecommendationJob.",
+  "fields": [
+    {"name": "customerId",        "type": "string"},
+    {"name": "scanId",            "type": ["null","string"], "default": null,
+                                  "doc": "The scan that triggered this recommendation batch (if scan-driven)"},
+    {"name": "schemaVersion",     "type": "int", "default": 1},
+    {"name": "eventTime",         "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "recommendationId",  "type": "string"},
+    {"name": "recommendationSource","type": {"type": "enum", "name": "RecommendationSource",
+                                              "symbols": ["SCAN_RESULTS","PURCHASE_HISTORY",
+                                                          "COLLABORATIVE_FILTER","RULE_BASED",
+                                                          "MANUAL_OVERRIDE"]},
+                                  "default": "SCAN_RESULTS"},
+    {"name": "products",          "type": {
+      "type": "array",
+      "items": {
+        "type": "record",
+        "name": "RecommendedProduct",
+        "fields": [
+          {"name": "productId",    "type": "string"},
+          {"name": "rank",         "type": "int", "doc": "1 = most recommended"},
+          {"name": "score",        "type": "float", "doc": "0-1 recommendation confidence"},
+          {"name": "reasons",      "type": {"type": "array", "items": "string"}, "default": [],
+                                   "doc": "Human-readable explanation fragments e.g. ['improves hydration','targets dark spots']"},
+          {"name": "targetConcern","type": ["null","string"], "default": null}
+        ]
+      }
+    }, "default": []},
+    {"name": "expiresAt",         "type": ["null","long"], "default": null, "logicalType": "timestamp-millis"},
+    {"name": "metadata",          "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

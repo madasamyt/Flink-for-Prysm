@@ -1,0 +1,22 @@
+{
+  "namespace": "com.nuskin.prysm.avro.product",
+  "type": "record",
+  "name": "ProductInteraction",
+  "doc": "Customer interactions with product listings — views, taps, add-to-cart, wishlist.",
+  "fields": [
+    {"name": "customerId",      "type": "string"},
+    {"name": "schemaVersion",   "type": "int", "default": 1},
+    {"name": "eventTime",       "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "sessionId",       "type": ["null","string"], "default": null},
+    {"name": "productId",       "type": "string"},
+    {"name": "interactionType", "type": {"type": "enum", "name": "InteractionType",
+                                          "symbols": ["VIEW","DETAIL_VIEW","ADD_TO_CART","REMOVE_FROM_CART",
+                                                      "ADD_TO_WISHLIST","SHARE","RECOMMENDATION_CLICK",
+                                                      "RECOMMENDATION_DISMISS"]},
+                                "default": "VIEW"},
+    {"name": "recommendationId","type": ["null","string"], "default": null,
+                                "doc": "Set when the interaction originated from a recommendation"},
+    {"name": "durationMs",      "type": ["null","long"], "default": null, "doc": "For VIEW events"},
+    {"name": "metadata",        "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

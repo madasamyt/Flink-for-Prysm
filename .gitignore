@@ -1,0 +1,29 @@
+# Build artifacts
+target/
+*.class
+*.jar
+
+# Environment files — NEVER commit secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Flink local checkpoints
+/checkpoints/
+/savepoints/
+
+# LocalStack persistence
+docker/localstack-data/
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar

@@ -1,0 +1,26 @@
+{
+  "namespace": "com.nuskin.prysm.avro.scan",
+  "type": "record",
+  "name": "ScanWrinkles",
+  "doc": "Fine lines and wrinkle depth analysis per facial zone.",
+  "fields": [
+    {"name": "customerId",          "type": "string"},
+    {"name": "scanId",              "type": "string"},
+    {"name": "schemaVersion",       "type": "int", "default": 1},
+    {"name": "eventTime",           "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "overallWrinkleScore", "type": ["null","float"], "default": null, "doc": "0-100, higher=more wrinkles"},
+    {"name": "wrinkleGrade",        "type": {"type": "enum", "name": "WrinkleGrade",
+                                             "symbols": ["NONE","MILD","MODERATE","DEEP","UNKNOWN"]},
+                                    "default": "UNKNOWN"},
+    {"name": "fineLinesCount",      "type": ["null","int"],   "default": null},
+    {"name": "deepLinesCount",      "type": ["null","int"],   "default": null},
+    {"name": "crowsFeetScore",      "type": ["null","float"], "default": null},
+    {"name": "foreheadLinesScore",  "type": ["null","float"], "default": null},
+    {"name": "nasolabialScore",     "type": ["null","float"], "default": null,
+                                    "doc": "Nasolabial folds (smile lines) score"},
+    {"name": "zoneScores",          "type": {"type": "map", "values": "float"}, "default": {}},
+    {"name": "estimatedSkinAge",    "type": ["null","int"],   "default": null,
+                                    "doc": "ML model skin-age estimate in years"},
+    {"name": "metadata",            "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

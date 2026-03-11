@@ -1,0 +1,24 @@
+{
+  "namespace": "com.nuskin.prysm.avro.scan",
+  "type": "record",
+  "name": "ScanOverall",
+  "doc": "Composite skin health score aggregating all individual scan dimensions. Written by the Prysm device pipeline after all dimension streams are published.",
+  "fields": [
+    {"name": "customerId",          "type": "string"},
+    {"name": "scanId",              "type": "string"},
+    {"name": "schemaVersion",       "type": "int", "default": 1},
+    {"name": "eventTime",           "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "overallSkinScore",    "type": ["null","float"], "default": null, "doc": "0-100 weighted composite"},
+    {"name": "hydrationScore",      "type": ["null","float"], "default": null},
+    {"name": "pigmentationScore",   "type": ["null","float"], "default": null},
+    {"name": "textureScore",        "type": ["null","float"], "default": null},
+    {"name": "wrinkleScore",        "type": ["null","float"], "default": null},
+    {"name": "radianceScore",       "type": ["null","float"], "default": null},
+    {"name": "skinAgeEstimate",     "type": ["null","int"],   "default": null},
+    {"name": "topConcerns",         "type": {"type": "array", "items": "string"}, "default": [],
+                                    "doc": "Top 3 skin concerns identified, ordered by severity"},
+    {"name": "improvementSinceLastScan", "type": ["null","float"], "default": null,
+                                    "doc": "Delta vs previous scan's overallSkinScore"},
+    {"name": "metadata",            "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

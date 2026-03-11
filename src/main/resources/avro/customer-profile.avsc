@@ -1,0 +1,29 @@
+{
+  "namespace": "com.nuskin.prysm.avro.customer",
+  "type": "record",
+  "name": "CustomerProfile",
+  "doc": "Core customer profile. PII fields are marked with 'sensitive:true' and encrypted at rest via KMS.",
+  "fields": [
+    {"name": "customerId",    "type": "string",        "doc": "Stable UUID for this customer"},
+    {"name": "schemaVersion", "type": "int",           "default": 1, "doc": "Incremented on each schema evolution"},
+    {"name": "eventTime",     "type": "long",          "logicalType": "timestamp-millis", "doc": "Event timestamp (epoch ms)"},
+    {"name": "eventType",     "type": {"type": "enum", "name": "ProfileEventType",
+                                        "symbols": ["CREATED","UPDATED","DELETED","REACTIVATED","ANONYMISED"]},
+                              "default": "CREATED"},
+    {"name": "firstName",     "type": ["null","string"], "default": null, "sensitive": true},
+    {"name": "lastName",      "type": ["null","string"], "default": null, "sensitive": true},
+    {"name": "email",         "type": ["null","string"], "default": null, "sensitive": true},
+    {"name": "phone",         "type": ["null","string"], "default": null, "sensitive": true},
+    {"name": "dateOfBirth",   "type": ["null","string"], "default": null, "sensitive": true, "doc": "ISO-8601 date YYYY-MM-DD"},
+    {"name": "gender",        "type": ["null","string"], "default": null},
+    {"name": "countryCode",   "type": "string",        "default": "US", "doc": "ISO-3166-1 alpha-2"},
+    {"name": "locale",        "type": "string",        "default": "en-US"},
+    {"name": "marketId",      "type": ["null","string"], "default": null, "doc": "NuSkin market segment ID"},
+    {"name": "distributorId", "type": ["null","string"], "default": null},
+    {"name": "registrationSource", "type": {"type": "enum", "name": "RegistrationSource",
+                                             "symbols": ["APP","WEB","IN_STORE","DISTRIBUTOR","UNKNOWN"]},
+                                   "default": "UNKNOWN"},
+    {"name": "metadata",      "type": {"type": "map", "values": "string"}, "default": {},
+                              "doc": "Extensible key-value bag — absorbs future schema additions without a full schema bump"}
+  ]
+}

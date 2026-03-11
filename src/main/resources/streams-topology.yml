@@ -1,0 +1,222 @@
+# ============================================================
+# Prysm Kinesis → Flink stream topology
+# Stream ARNs and bucket names are resolved at runtime from
+# AWS SSM Parameter Store using the path pattern:
+#   /prysm/{env}/kinesis/stream/{streamKey}
+# This file contains only non-sensitive structural metadata.
+# ============================================================
+
+streams:
+  # --- Customer domain -------------------------------------------------------
+  - key: customer-profile
+    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-profile
+    avroSchema: customer-profile.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: CustomerProfile
+    icebergTable: customer.customer_profiles
+    partitionBy: [eventDate, countryCode]
+    sensitiveFields: [firstName, lastName, email, phone, dateOfBirth, ipAddress]
+    streamType: CUSTOMER
+    efoConsumer: prysm-flink-customer-profile-{env}
+
+  - key: customer-preferences
+    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-preferences
+    avroSchema: customer-preferences.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: CustomerPreferences
+    icebergTable: customer.customer_preferences
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: CUSTOMER
+    efoConsumer: prysm-flink-customer-preferences-{env}
+
+  - key: customer-consent
+    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-consent
+    avroSchema: customer-consent.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: CustomerConsent
+    icebergTable: customer.customer_consent
+    partitionBy: [eventDate, consentType]
+    sensitiveFields: [ipAddress]
+    streamType: CUSTOMER
+    efoConsumer: prysm-flink-customer-consent-{env}
+
+  - key: customer-loyalty
+    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-loyalty
+    avroSchema: customer-loyalty.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: CustomerLoyalty
+    icebergTable: customer.customer_loyalty
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: CUSTOMER
+    efoConsumer: prysm-flink-customer-loyalty-{env}
+
+  - key: customer-sessions
+    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-sessions
+    avroSchema: customer-sessions.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: CustomerSession
+    icebergTable: customer.customer_sessions
+    partitionBy: [eventDate, platform]
+    sensitiveFields: []
+    streamType: CUSTOMER
+    efoConsumer: prysm-flink-customer-sessions-{env}
+
+  # --- Scan domain -----------------------------------------------------------
+  - key: scan-session
+    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-session
+    avroSchema: scan-session.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ScanSession
+    icebergTable: scan.scan_sessions
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: SCAN
+    efoConsumer: prysm-flink-scan-session-{env}
+
+  - key: scan-facial
+    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-facial
+    avroSchema: scan-facial.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ScanFacial
+    icebergTable: scan.scan_facial
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: SCAN
+    efoConsumer: prysm-flink-scan-facial-{env}
+
+  - key: scan-hydration
+    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-hydration
+    avroSchema: scan-hydration.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ScanHydration
+    icebergTable: scan.scan_hydration
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: SCAN
+    efoConsumer: prysm-flink-scan-hydration-{env}
+
+  - key: scan-pigmentation
+    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-pigmentation
+    avroSchema: scan-pigmentation.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ScanPigmentation
+    icebergTable: scan.scan_pigmentation
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: SCAN
+    efoConsumer: prysm-flink-scan-pigmentation-{env}
+
+  - key: scan-texture
+    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-texture
+    avroSchema: scan-texture.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ScanTexture
+    icebergTable: scan.scan_texture
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: SCAN
+    efoConsumer: prysm-flink-scan-texture-{env}
+
+  - key: scan-wrinkles
+    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-wrinkles
+    avroSchema: scan-wrinkles.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ScanWrinkles
+    icebergTable: scan.scan_wrinkles
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: SCAN
+    efoConsumer: prysm-flink-scan-wrinkles-{env}
+
+  - key: scan-radiance
+    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-radiance
+    avroSchema: scan-radiance.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ScanRadiance
+    icebergTable: scan.scan_radiance
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: SCAN
+    efoConsumer: prysm-flink-scan-radiance-{env}
+
+  - key: scan-overall
+    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-overall
+    avroSchema: scan-overall.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ScanOverall
+    icebergTable: scan.scan_overall
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: SCAN
+    efoConsumer: prysm-flink-scan-overall-{env}
+
+  # --- Product domain --------------------------------------------------------
+  - key: product-catalog
+    streamNameParamPath: /prysm/{env}/kinesis/stream/product-catalog
+    avroSchema: product-catalog.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ProductCatalog
+    icebergTable: product.product_catalog
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: PRODUCT
+    efoConsumer: prysm-flink-product-catalog-{env}
+
+  - key: product-recommendations
+    streamNameParamPath: /prysm/{env}/kinesis/stream/product-recommendations
+    avroSchema: product-recommendations.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ProductRecommendation
+    icebergTable: product.product_recommendations
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: PRODUCT
+    efoConsumer: prysm-flink-product-recommendations-{env}
+
+  - key: product-interactions
+    streamNameParamPath: /prysm/{env}/kinesis/stream/product-interactions
+    avroSchema: product-interactions.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: ProductInteraction
+    icebergTable: product.product_interactions
+    partitionBy: [eventDate, interactionType]
+    sensitiveFields: []
+    streamType: PRODUCT
+    efoConsumer: prysm-flink-product-interactions-{env}
+
+  # --- Commerce domain -------------------------------------------------------
+  - key: commerce-orders
+    streamNameParamPath: /prysm/{env}/kinesis/stream/commerce-orders
+    avroSchema: commerce-orders.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: CommerceOrder
+    icebergTable: commerce.orders
+    partitionBy: [eventDate, channel]
+    sensitiveFields: []
+    streamType: COMMERCE
+    efoConsumer: prysm-flink-commerce-orders-{env}
+
+  - key: commerce-returns
+    streamNameParamPath: /prysm/{env}/kinesis/stream/commerce-returns
+    avroSchema: commerce-returns.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: CommerceReturn
+    icebergTable: commerce.returns
+    partitionBy: [eventDate]
+    sensitiveFields: []
+    streamType: COMMERCE
+    efoConsumer: prysm-flink-commerce-returns-{env}
+
+  # --- Device domain ---------------------------------------------------------
+  - key: device-telemetry
+    streamNameParamPath: /prysm/{env}/kinesis/stream/device-telemetry
+    avroSchema: device-telemetry.avsc
+    glueRegistryName: prysm-{env}-registry
+    glueSchemaName: DeviceTelemetry
+    icebergTable: device.device_telemetry
+    partitionBy: [eventDate, eventType]
+    sensitiveFields: []
+    streamType: DEVICE
+    efoConsumer: prysm-flink-device-telemetry-{env}

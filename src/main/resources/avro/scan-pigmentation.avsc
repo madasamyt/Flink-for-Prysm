@@ -1,0 +1,21 @@
+{
+  "namespace": "com.nuskin.prysm.avro.scan",
+  "type": "record",
+  "name": "ScanPigmentation",
+  "doc": "Melanin distribution, UV spots, and hyperpigmentation analysis.",
+  "fields": [
+    {"name": "customerId",              "type": "string"},
+    {"name": "scanId",                  "type": "string"},
+    {"name": "schemaVersion",           "type": "int", "default": 1},
+    {"name": "eventTime",               "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "overallPigmentationScore","type": ["null","float"], "default": null, "doc": "0-100, higher=more uneven"},
+    {"name": "darkSpotsCount",          "type": ["null","int"],   "default": null},
+    {"name": "darkSpotsArea",           "type": ["null","float"], "default": null, "doc": "% of face area"},
+    {"name": "uvSpotsCount",            "type": ["null","int"],   "default": null,
+                                        "doc": "Spots visible only under UV light"},
+    {"name": "melasmaScore",            "type": ["null","float"], "default": null, "doc": "0-100"},
+    {"name": "zoneScores",              "type": {"type": "map", "values": "float"}, "default": {}},
+    {"name": "melaninIndex",            "type": ["null","float"], "default": null},
+    {"name": "metadata",                "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

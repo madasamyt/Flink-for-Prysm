@@ -1,0 +1,24 @@
+{
+  "namespace": "com.nuskin.prysm.avro.customer",
+  "type": "record",
+  "name": "CustomerSession",
+  "doc": "Mobile / web app session lifecycle events.",
+  "fields": [
+    {"name": "customerId",    "type": "string"},
+    {"name": "schemaVersion", "type": "int", "default": 1},
+    {"name": "eventTime",     "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "sessionId",     "type": "string"},
+    {"name": "eventType",     "type": {"type": "enum", "name": "SessionEventType",
+                                        "symbols": ["STARTED","RESUMED","ENDED","TIMED_OUT"]},
+                              "default": "STARTED"},
+    {"name": "platform",      "type": {"type": "enum", "name": "Platform",
+                                        "symbols": ["IOS","ANDROID","WEB","KIOSK","UNKNOWN"]},
+                              "default": "UNKNOWN"},
+    {"name": "appVersion",    "type": ["null","string"], "default": null},
+    {"name": "deviceModel",   "type": ["null","string"], "default": null},
+    {"name": "osVersion",     "type": ["null","string"], "default": null},
+    {"name": "sessionDurationMs", "type": ["null","long"], "default": null},
+    {"name": "screenCount",   "type": ["null","int"],  "default": null},
+    {"name": "metadata",      "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

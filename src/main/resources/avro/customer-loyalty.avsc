@@ -1,0 +1,24 @@
+{
+  "namespace": "com.nuskin.prysm.avro.customer",
+  "type": "record",
+  "name": "CustomerLoyalty",
+  "doc": "Loyalty programme balance and tier changes.",
+  "fields": [
+    {"name": "customerId",    "type": "string"},
+    {"name": "schemaVersion", "type": "int", "default": 1},
+    {"name": "eventTime",     "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "eventType",     "type": {"type": "enum", "name": "LoyaltyEventType",
+                                        "symbols": ["POINTS_EARNED","POINTS_REDEEMED","TIER_UPGRADED",
+                                                    "TIER_DOWNGRADED","POINTS_EXPIRED","ENROLLED"]},
+                              "default": "POINTS_EARNED"},
+    {"name": "pointsDelta",   "type": "int",  "doc": "Positive=earned, Negative=redeemed/expired"},
+    {"name": "pointsBalance", "type": "int"},
+    {"name": "tier",          "type": {"type": "enum", "name": "LoyaltyTier",
+                                        "symbols": ["BRONZE","SILVER","GOLD","PLATINUM","AMBASSADOR"]},
+                              "default": "BRONZE"},
+    {"name": "sourceOrderId", "type": ["null","string"], "default": null},
+    {"name": "sourceScanId",  "type": ["null","string"], "default": null,
+                              "doc": "Points may also be earned for completing a Prysm scan"},
+    {"name": "metadata",      "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

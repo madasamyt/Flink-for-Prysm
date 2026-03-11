@@ -1,0 +1,30 @@
+{
+  "namespace": "com.nuskin.prysm.avro.product",
+  "type": "record",
+  "name": "ProductCatalog",
+  "doc": "Product reference data — CDC stream from the product master database.",
+  "fields": [
+    {"name": "productId",       "type": "string"},
+    {"name": "schemaVersion",   "type": "int", "default": 1},
+    {"name": "eventTime",       "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "eventType",       "type": {"type": "enum", "name": "CatalogEventType",
+                                          "symbols": ["UPSERT","DELETED","ACTIVATED","DISCONTINUED"]},
+                                "default": "UPSERT"},
+    {"name": "sku",             "type": "string"},
+    {"name": "name",            "type": "string"},
+    {"name": "productLine",     "type": ["null","string"], "default": null,
+                                "doc": "e.g. ageLOC, Epoch, Nu Colour"},
+    {"name": "category",        "type": ["null","string"], "default": null,
+                                "doc": "e.g. Serum, Moisturizer, Eye Cream, Supplement"},
+    {"name": "targetSkinConcerns", "type": {"type": "array", "items": "string"}, "default": [],
+                                "doc": "Skin concerns this product addresses — matches CustomerPreferences.skinConcerns"},
+    {"name": "targetSkinTypes", "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "keyIngredients",  "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "marketIds",       "type": {"type": "array", "items": "string"}, "default": [],
+                                "doc": "Markets where this product is available"},
+    {"name": "priceUSD",        "type": ["null","double"], "default": null},
+    {"name": "imageUrl",        "type": ["null","string"], "default": null},
+    {"name": "isActive",        "type": "boolean", "default": true},
+    {"name": "metadata",        "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

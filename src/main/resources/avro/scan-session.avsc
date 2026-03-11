@@ -1,0 +1,29 @@
+{
+  "namespace": "com.nuskin.prysm.avro.scan",
+  "type": "record",
+  "name": "ScanSession",
+  "doc": "Top-level envelope for a single Prysm device scan session. Child metric streams reference this scanId.",
+  "fields": [
+    {"name": "customerId",    "type": "string"},
+    {"name": "schemaVersion", "type": "int", "default": 1},
+    {"name": "eventTime",     "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "scanId",        "type": "string", "doc": "UUID for this scan session — FK for all scan metric streams"},
+    {"name": "sessionId",     "type": ["null","string"], "default": null, "doc": "App session that triggered the scan"},
+    {"name": "deviceId",      "type": "string", "doc": "Prysm device serial number"},
+    {"name": "deviceFirmware","type": ["null","string"], "default": null},
+    {"name": "scanType",      "type": {"type": "enum", "name": "ScanType",
+                                        "symbols": ["FULL_FACE","LEFT_CHEEK","RIGHT_CHEEK",
+                                                    "FOREHEAD","UNDER_EYES","QUICK","CALIBRATION"]},
+                              "default": "FULL_FACE"},
+    {"name": "status",        "type": {"type": "enum", "name": "ScanStatus",
+                                        "symbols": ["INITIATED","PROCESSING","COMPLETED","FAILED","CANCELLED"]},
+                              "default": "INITIATED"},
+    {"name": "lightingScore", "type": ["null","float"], "default": null,
+                              "doc": "0-100 confidence score for lighting conditions during scan"},
+    {"name": "motionScore",   "type": ["null","float"], "default": null,
+                              "doc": "0-100 — low = too much motion"},
+    {"name": "scanDurationMs","type": ["null","long"],  "default": null},
+    {"name": "countryCode",   "type": "string", "default": "US"},
+    {"name": "metadata",      "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

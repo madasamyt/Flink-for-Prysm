@@ -1,0 +1,26 @@
+{
+  "namespace": "com.nuskin.prysm.avro.customer",
+  "type": "record",
+  "name": "CustomerPreferences",
+  "doc": "Lifestyle, dietary, and product preferences captured during onboarding or updated via the app.",
+  "fields": [
+    {"name": "customerId",      "type": "string"},
+    {"name": "schemaVersion",   "type": "int", "default": 1},
+    {"name": "eventTime",       "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "skinType",        "type": {"type": "enum", "name": "SkinType",
+                                          "symbols": ["NORMAL","DRY","OILY","COMBINATION","SENSITIVE","UNKNOWN"]},
+                                "default": "UNKNOWN"},
+    {"name": "skinConcerns",    "type": {"type": "array", "items": "string"}, "default": [],
+                                "doc": "e.g. [WRINKLES, DARK_SPOTS, HYDRATION, RADIANCE, PORES]"},
+    {"name": "preferredProductLines", "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "dietaryRestrictions",   "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "allergies",             "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "preferredNotificationChannel",
+                                "type": {"type": "enum", "name": "NotificationChannel",
+                                          "symbols": ["EMAIL","PUSH","SMS","IN_APP","NONE"]},
+                                "default": "PUSH"},
+    {"name": "optInMarketing",  "type": "boolean", "default": false},
+    {"name": "languagePreference", "type": "string", "default": "en"},
+    {"name": "metadata",        "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

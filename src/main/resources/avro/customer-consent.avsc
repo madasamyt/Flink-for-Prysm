@@ -1,0 +1,23 @@
+{
+  "namespace": "com.nuskin.prysm.avro.customer",
+  "type": "record",
+  "name": "CustomerConsent",
+  "doc": "GDPR / CCPA / PIPEDA consent record. Immutable audit trail — never update, only append.",
+  "fields": [
+    {"name": "customerId",    "type": "string"},
+    {"name": "schemaVersion", "type": "int", "default": 1},
+    {"name": "eventTime",     "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "consentId",     "type": "string", "doc": "UUID per consent event"},
+    {"name": "consentType",   "type": {"type": "enum", "name": "ConsentType",
+                                        "symbols": ["DATA_PROCESSING","MARKETING_EMAIL","MARKETING_PUSH",
+                                                    "DATA_SHARING_PARTNERS","BIOMETRIC_SCAN","ANALYTICS","ALL"]},
+                              "default": "DATA_PROCESSING"},
+    {"name": "granted",       "type": "boolean"},
+    {"name": "version",       "type": "string", "doc": "Legal policy version string e.g. 'privacy-policy-v3.1'"},
+    {"name": "ipAddress",     "type": ["null","string"], "default": null, "sensitive": true},
+    {"name": "userAgent",     "type": ["null","string"], "default": null},
+    {"name": "countryCode",   "type": "string", "default": "US"},
+    {"name": "expiresAt",     "type": ["null","long"],   "default": null, "logicalType": "timestamp-millis"},
+    {"name": "metadata",      "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

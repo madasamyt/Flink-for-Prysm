@@ -1,0 +1,20 @@
+{
+  "namespace": "com.nuskin.prysm.avro.scan",
+  "type": "record",
+  "name": "ScanRadiance",
+  "doc": "Skin luminosity, glow, and clarity measurements.",
+  "fields": [
+    {"name": "customerId",         "type": "string"},
+    {"name": "scanId",             "type": "string"},
+    {"name": "schemaVersion",      "type": "int", "default": 1},
+    {"name": "eventTime",          "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "radianceScore",      "type": ["null","float"], "default": null, "doc": "0-100"},
+    {"name": "clarityScore",       "type": ["null","float"], "default": null},
+    {"name": "glossScore",         "type": ["null","float"], "default": null, "doc": "Oiliness / sheen level"},
+    {"name": "luminosityL",        "type": ["null","float"], "default": null, "doc": "CIE L* (lightness)"},
+    {"name": "colorA",             "type": ["null","float"], "default": null, "doc": "CIE a* (red-green axis)"},
+    {"name": "colorB",             "type": ["null","float"], "default": null, "doc": "CIE b* (blue-yellow axis)"},
+    {"name": "zoneScores",         "type": {"type": "map", "values": "float"}, "default": {}},
+    {"name": "metadata",           "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

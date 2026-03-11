@@ -1,0 +1,41 @@
+{
+  "namespace": "com.nuskin.prysm.avro.commerce",
+  "type": "record",
+  "name": "CommerceOrder",
+  "doc": "Purchase order lifecycle events.",
+  "fields": [
+    {"name": "customerId",    "type": "string"},
+    {"name": "schemaVersion", "type": "int", "default": 1},
+    {"name": "eventTime",     "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "orderId",       "type": "string"},
+    {"name": "eventType",     "type": {"type": "enum", "name": "OrderEventType",
+                                        "symbols": ["PLACED","CONFIRMED","SHIPPED","DELIVERED",
+                                                    "CANCELLED","PAYMENT_FAILED","REFUNDED"]},
+                              "default": "PLACED"},
+    {"name": "channel",       "type": {"type": "enum", "name": "OrderChannel",
+                                        "symbols": ["APP","WEB","IN_STORE","SUBSCRIPTION","DISTRIBUTOR"]},
+                              "default": "APP"},
+    {"name": "lineItems",     "type": {
+      "type": "array",
+      "items": {
+        "type": "record",
+        "name": "OrderLineItem",
+        "fields": [
+          {"name": "productId",  "type": "string"},
+          {"name": "sku",        "type": "string"},
+          {"name": "quantity",   "type": "int"},
+          {"name": "unitPrice",  "type": "double"},
+          {"name": "currency",   "type": "string", "default": "USD"}
+        ]
+      }
+    }, "default": []},
+    {"name": "totalAmount",   "type": "double"},
+    {"name": "currency",      "type": "string", "default": "USD"},
+    {"name": "pointsEarned",  "type": ["null","int"], "default": null},
+    {"name": "couponCode",    "type": ["null","string"], "default": null},
+    {"name": "scanId",        "type": ["null","string"], "default": null,
+                              "doc": "If the order was scan-recommendation driven"},
+    {"name": "marketId",      "type": ["null","string"], "default": null},
+    {"name": "metadata",      "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

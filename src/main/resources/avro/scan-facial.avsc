@@ -1,0 +1,24 @@
+{
+  "namespace": "com.nuskin.prysm.avro.scan",
+  "type": "record",
+  "name": "ScanFacial",
+  "doc": "Facial geometry and structure analysis from the Prysm device camera.",
+  "fields": [
+    {"name": "customerId",        "type": "string"},
+    {"name": "scanId",            "type": "string"},
+    {"name": "schemaVersion",     "type": "int", "default": 1},
+    {"name": "eventTime",         "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "faceConfidence",    "type": ["null","float"], "default": null, "doc": "0-1 ML model confidence"},
+    {"name": "faceWidth",         "type": ["null","float"], "default": null, "doc": "mm"},
+    {"name": "faceHeight",        "type": ["null","float"], "default": null, "doc": "mm"},
+    {"name": "symmetryScore",     "type": ["null","float"], "default": null, "doc": "0-100"},
+    {"name": "skinToneLabel",     "type": ["null","string"], "default": null,
+                                  "doc": "Fitzpatrick scale: I-VI as string"},
+    {"name": "skinToneITA",       "type": ["null","float"],  "default": null,
+                                  "doc": "Individual Typology Angle — numeric skin tone measure"},
+    {"name": "facialRegionsAnalysed", "type": {"type": "array", "items": "string"}, "default": [],
+                                  "doc": "e.g. [FOREHEAD, LEFT_CHEEK, RIGHT_CHEEK, NOSE, CHIN]"},
+    {"name": "landmarkCount",     "type": ["null","int"], "default": null},
+    {"name": "metadata",          "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

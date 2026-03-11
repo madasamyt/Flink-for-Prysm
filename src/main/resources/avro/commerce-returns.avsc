@@ -1,0 +1,32 @@
+{
+  "namespace": "com.nuskin.prysm.avro.commerce",
+  "type": "record",
+  "name": "CommerceReturn",
+  "doc": "Return and refund events. Used to update recommendation models (negative signal).",
+  "fields": [
+    {"name": "customerId",    "type": "string"},
+    {"name": "schemaVersion", "type": "int", "default": 1},
+    {"name": "eventTime",     "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "returnId",      "type": "string"},
+    {"name": "orderId",       "type": "string"},
+    {"name": "eventType",     "type": {"type": "enum", "name": "ReturnEventType",
+                                        "symbols": ["REQUESTED","APPROVED","RECEIVED","REFUNDED","REJECTED"]},
+                              "default": "REQUESTED"},
+    {"name": "returnedItems", "type": {
+      "type": "array",
+      "items": {
+        "type": "record",
+        "name": "ReturnLineItem",
+        "fields": [
+          {"name": "productId", "type": "string"},
+          {"name": "quantity",  "type": "int"},
+          {"name": "reason",    "type": "string",
+           "doc": "e.g. SKIN_REACTION, NOT_EFFECTIVE, WRONG_PRODUCT, CHANGED_MIND"}
+        ]
+      }
+    }, "default": []},
+    {"name": "refundAmount",  "type": ["null","double"], "default": null},
+    {"name": "currency",      "type": "string", "default": "USD"},
+    {"name": "metadata",      "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

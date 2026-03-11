@@ -1,0 +1,20 @@
+{
+  "namespace": "com.nuskin.prysm.avro.scan",
+  "type": "record",
+  "name": "ScanTexture",
+  "doc": "Skin texture analysis — pore size, roughness, and smoothness metrics.",
+  "fields": [
+    {"name": "customerId",         "type": "string"},
+    {"name": "scanId",             "type": "string"},
+    {"name": "schemaVersion",      "type": "int", "default": 1},
+    {"name": "eventTime",          "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "overallTextureScore","type": ["null","float"], "default": null, "doc": "0-100, higher=smoother"},
+    {"name": "poreScore",          "type": ["null","float"], "default": null, "doc": "0-100, higher=smaller pores"},
+    {"name": "poreCount",          "type": ["null","int"],   "default": null},
+    {"name": "poreAvgDiameterMicrons","type": ["null","float"], "default": null},
+    {"name": "roughnessScore",     "type": ["null","float"], "default": null, "doc": "0-100, higher=rougher"},
+    {"name": "smoothnessScore",    "type": ["null","float"], "default": null},
+    {"name": "zoneScores",         "type": {"type": "map", "values": "float"}, "default": {}},
+    {"name": "metadata",           "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

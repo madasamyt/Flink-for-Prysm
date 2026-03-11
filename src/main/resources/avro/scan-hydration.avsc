@@ -1,0 +1,22 @@
+{
+  "namespace": "com.nuskin.prysm.avro.scan",
+  "type": "record",
+  "name": "ScanHydration",
+  "doc": "Skin hydration levels measured per facial zone.",
+  "fields": [
+    {"name": "customerId",          "type": "string"},
+    {"name": "scanId",              "type": "string"},
+    {"name": "schemaVersion",       "type": "int", "default": 1},
+    {"name": "eventTime",           "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "overallHydrationScore","type": ["null","float"], "default": null, "doc": "0-100"},
+    {"name": "hydrationLabel",      "type": {"type": "enum", "name": "HydrationLabel",
+                                              "symbols": ["VERY_DRY","DRY","NORMAL","HYDRATED","VERY_HYDRATED","UNKNOWN"]},
+                                    "default": "UNKNOWN"},
+    {"name": "zoneScores",          "type": {"type": "map", "values": "float"}, "default": {},
+                                    "doc": "Zone name -> hydration score, e.g. {forehead: 62.3, left_cheek: 71.1}"},
+    {"name": "tewlValue",           "type": ["null","float"], "default": null,
+                                    "doc": "Trans-Epidermal Water Loss estimate (g/m²/h)"},
+    {"name": "recommendedIntakeGlasses", "type": ["null","int"], "default": null},
+    {"name": "metadata",            "type": {"type": "map", "values": "string"}, "default": {}}
+  ]
+}

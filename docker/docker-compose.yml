@@ -1,0 +1,122 @@
+version: "3.9"
+
+# ============================================================
+# Local development stack for the Prysm Flink Pipeline
+#
+# Services:
+#   localstack   — emulates Kinesis, S3, SSM, Secrets Manager, KMS, Glue
+#   flink-jm     — Flink JobManager
+#   flink-tm     — Flink TaskManager (1 replica, scale as needed)
+#   init         — one-shot container that creates Kinesis streams,
+#                  S3 buckets, and SSM parameters in LocalStack
+#
+# Usage:
+#   cp ../.env.example .env          # fill in your values
+#   docker compose up -d localstack  # start LocalStack first
+#   docker compose up init           # create AWS resources
+#   docker compose up flink-jm flink-tm
+#   # Submit a job:
+#   docker compose exec flink-jm flink run \
+#     -c com.nuskin.prysm.flink.PrysmPipelineMain \
+#     /opt/flink/usrlib/flink-prysm-pipeline-1.0.0-fat.jar \
+#     --job ingestion
+# ============================================================
+
+services:
+
+  # ─── LocalStack: emulates all required AWS services ──────────────────────
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: prysm-localstack
+    ports:
+      - "4566:4566"   # unified endpoint
+    environment:
+      - SERVICES=kinesis,s3,ssm,secretsmanager,kms,glue,sts
+      - DEFAULT_REGION=us-east-1
+      - KINESIS_LATENCY=0          # disable artificial latency in dev
+      - KINESIS_INITIALIZE_STREAMS=# created by init container
+      - DEBUG=0
+      - PERSISTENCE=1              # persist state across restarts
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ─── Init container: creates all AWS resources in LocalStack ─────────────
+  init:
+    image: amazon/aws-cli:2.15.13
+    container_name: prysm-init
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    volumes:
+      - ./localstack-init:/scripts:ro
+    entrypoint: ["/bin/bash", "/scripts/00-run-all.sh"]
+
+  # ─── Flink JobManager ─────────────────────────────────────────────────────
+  flink-jm:
+    image: apache/flink:1.18.1-java11
+    container_name: prysm-flink-jm
+    depends_on:
+      - localstack
+    command: jobmanager
+    ports:
+      - "8081:8081"   # Flink Web UI
+    environment:
+      - FLINK_PROPERTIES=jobmanager.rpc.address: flink-jm
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL_KINESIS=http://localstack:4566
+      - AWS_ENDPOINT_URL_S3=http://localstack:4566
+      - AWS_ENDPOINT_URL_SSM=http://localstack:4566
+      - AWS_ENDPOINT_URL_SECRETSMANAGER=http://localstack:4566
+      - AWS_ENDPOINT_URL_KMS=http://localstack:4566
+      - PRYSM_ENV=local
+    volumes:
+      - ../target:/opt/flink/usrlib:ro   # mount built fat JAR
+      - flink-checkpoints:/opt/flink/checkpoints
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ─── Flink TaskManager ────────────────────────────────────────────────────
+  flink-tm:
+    image: apache/flink:1.18.1-java11
+    container_name: prysm-flink-tm
+    depends_on:
+      flink-jm:
+        condition: service_healthy
+    command: taskmanager
+    environment:
+      - FLINK_PROPERTIES=taskmanager.numberOfTaskSlots: 4
+        jobmanager.rpc.address: flink-jm
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL_KINESIS=http://localstack:4566
+      - AWS_ENDPOINT_URL_S3=http://localstack:4566
+      - AWS_ENDPOINT_URL_SSM=http://localstack:4566
+      - AWS_ENDPOINT_URL_SECRETSMANAGER=http://localstack:4566
+      - AWS_ENDPOINT_URL_KMS=http://localstack:4566
+      - PRYSM_ENV=local
+    volumes:
+      - ../target:/opt/flink/usrlib:ro
+      - flink-checkpoints:/opt/flink/checkpoints
+    deploy:
+      replicas: 1   # increase for more parallelism in local dev
+
+volumes:
+  localstack-data:
+  flink-checkpoints:
