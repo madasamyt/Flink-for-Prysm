@@ -107,24 +107,38 @@ public class AppConfig implements Serializable {
     // ── Stream-topology resolution ────────────────────────────────────────────
 
     /**
-     * Loads and resolves the full stream topology, substituting SSM-held
-     * stream names into each {@link StreamTopologyConfig.StreamDefinition}.
+     * Loads and resolves the full stream topology.
+     *
+     * <p>For each stream definition, resolves any runtime-dynamic values
+     * (e.g., Kinesis stream names from SSM Parameter Store) and sets them
+     * on the corresponding source config object.  All other config values
+     * are read directly from the YAML at parse time.
      */
     public StreamTopologyConfig resolveStreamTopology() {
         StreamTopologyConfig topology = StreamTopologyConfig.load();
         if ("local".equals(env)) {
-            // In local/test mode, use predictable stream names
-            topology.getStreams().forEach(s ->
-                    s.setResolvedStreamName(s.getKey()));
+            // In local/test mode, use the stream key directly as the stream name
+            topology.getStreams().forEach(streamDef -> {
+                if (streamDef.getSource() instanceof StreamTopologyConfig.KinesisSourceConfig) {
+                    streamDef.setResolvedStreamName(streamDef.getKey());
+                }
+            });
             return topology;
         }
 
         ParameterStoreUtil ssm = getSsmUtil();
-        topology.getStreams().forEach(stream -> {
-            String paramPath = ssm.resolvePath(stream.getStreamNameParamPath());
-            String streamName = ssm.getParameter(paramPath);
-            stream.setResolvedStreamName(streamName);
-            LOG.info("Resolved stream {}: {}", stream.getKey(), streamName);
+        topology.getStreams().forEach(streamDef -> {
+            // Only KINESIS sources require SSM-based name resolution;
+            // other source types (KAFKA, CDC, FILE) carry their config directly in YAML
+            if (streamDef.getSource() instanceof StreamTopologyConfig.KinesisSourceConfig) {
+                String rawPath = streamDef.getStreamNameParamPath();
+                if (rawPath != null) {
+                    String paramPath = ssm.resolvePath(rawPath);
+                    String streamName = ssm.getParameter(paramPath);
+                    streamDef.setResolvedStreamName(streamName);
+                    LOG.info("Resolved Kinesis stream {}: {}", streamDef.getKey(), streamName);
+                }
+            }
         });
         ssm.close();
         return topology;

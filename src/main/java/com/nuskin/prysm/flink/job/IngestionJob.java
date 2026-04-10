@@ -4,9 +4,12 @@ import com.nuskin.prysm.flink.config.AppConfig;
 import com.nuskin.prysm.flink.config.StreamTopologyConfig;
 import com.nuskin.prysm.flink.config.StreamTopologyConfig.StreamDefinition;
 import com.nuskin.prysm.flink.model.RawStreamEvent;
-import com.nuskin.prysm.flink.sink.IcebergSinkBuilder;
-import com.nuskin.prysm.flink.source.KinesisSourceBuilder;
+import com.nuskin.prysm.flink.sink.DlqSinkBuilder;
+import com.nuskin.prysm.flink.sink.SinkConnectorFactory;
+import com.nuskin.prysm.flink.source.SourceConnectorFactory;
 import com.nuskin.prysm.flink.transform.PIIEncryptionTransform;
+import com.nuskin.prysm.flink.transform.quality.QualityChainBuilder;
+import com.nuskin.prysm.flink.transform.quality.QualityChainBuilder.QualityChainResult;
 import org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -16,30 +19,35 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * <h2>Ingestion Job</h2>
+ * <h2>Ingestion Job — metadata-driven multi-source, multi-sink pipeline</h2>
  *
- * Reads all 19 Kinesis streams → applies PII encryption → routes each event
- * to its dedicated Apache Iceberg table in the S3 data lake.
+ * <p>This job is fully driven by {@code streams-topology.yml}. Adding a new
+ * stream, changing its quality rules, or adding a new sink target requires
+ * only a YAML edit — no code changes.
  *
+ * <h3>Per-stream pipeline (assembled from YAML metadata at startup)</h3>
  * <pre>
- *   Kinesis stream 1 ──┐
- *   Kinesis stream 2 ──┤
- *   ...                ├──► union ──► PII encrypt ──► fan-out ──► Iceberg table per stream
- *   Kinesis stream 19 ─┘
+ *   SourceConnectorFactory          (source.type: KINESIS / KAFKA / CDC / FILE)
+ *        │
+ *        ▼
+ *   QualityChainBuilder             (quality: requiredFields, typeCoercions,
+ *        │  clean stream            nullStrategy, fieldValidations, dedup, anomaly)
+ *        │  DLQ side-output ──────────────────────────────────────────────┐
+ *        ▼                                                                 │
+ *   PIIEncryptionTransform          (quality.sensitiveFields)             │
+ *        │                                                                 │
+ *        ▼                                                                 │
+ *   SinkConnectorFactory            (sinks[]: ICEBERG / DREMIO_FLIGHT /  │
+ *        │                           DATABRICKS_DELTA / ...)              │
+ *        ▼                                                                 │
+ *   [Iceberg, Dremio, Databricks…]                   DlqSinkBuilder ◄────┘
  * </pre>
  *
  * <h3>Fault tolerance</h3>
- * <p>Checkpointing to S3 every 60 s. RocksDB incremental checkpoints keep
- * checkpoint sizes small. The job uses exactly-once semantics end-to-end:
- * Kinesis EFO (exactly-once at source) and Iceberg atomic commits (exactly-once
- * at sink).
- *
- * <h3>Running</h3>
- * <pre>
- *   flink run -c com.nuskin.prysm.flink.job.IngestionJob \
- *       target/flink-prysm-pipeline-1.0.0-fat.jar \
- *       --job ingestion
- * </pre>
+ * <p>RocksDB incremental checkpoints to S3 every 60 s (configurable via
+ * {@code pipeline.checkpointIntervalMs} in the YAML or
+ * {@code checkpoint.interval.ms} in {@code application.properties}).
+ * Exactly-once semantics end-to-end via Kinesis EFO + Iceberg atomic commits.
  */
 public class IngestionJob {
 
@@ -50,67 +58,85 @@ public class IngestionJob {
     }
 
     public void run() throws Exception {
-        // ── 1. Load config and resolve all SSM / Secrets Manager values ──────
+        // ── 1. Load config and resolve all runtime-dynamic values ────────────
         AppConfig appConfig = AppConfig.load();
         StreamTopologyConfig topology = appConfig.resolveStreamTopology();
+
         LOG.info("Starting IngestionJob — env={}, streams={}",
                  appConfig.getEnv(), topology.getStreams().size());
 
         // ── 2. Build Flink execution environment ─────────────────────────────
-        StreamExecutionEnvironment env = buildEnv(appConfig);
+        StreamExecutionEnvironment env = buildEnv(appConfig, topology);
 
-        // ── 3. Build union source (all 19 streams) ───────────────────────────
-        KinesisSourceBuilder sourceBuilder = new KinesisSourceBuilder(appConfig, topology);
-        DataStream<RawStreamEvent> rawStream = sourceBuilder.buildUnionSource(env);
+        // ── 3. Build source factory and sink factory ──────────────────────────
+        SourceConnectorFactory sourceFactory =
+                new SourceConnectorFactory(appConfig, topology);
+        SinkConnectorFactory sinkFactory =
+                new SinkConnectorFactory(appConfig);
 
-        // ── 4. PII encryption (AES-256-GCM envelope encryption via KMS) ──────
-        DataStream<RawStreamEvent> encryptedStream = rawStream
-                .map(new PIIEncryptionTransform(appConfig))
-                .name("PII-Encrypt")
-                .uid("pii-encrypt")
-                .setParallelism(appConfig.getIngestionParallelism());
-
-        // ── 5. Fan-out: one Iceberg sink per stream ───────────────────────────
-        IcebergSinkBuilder sinkBuilder = new IcebergSinkBuilder(appConfig);
-
+        // ── 4. Per-stream pipeline assembly ───────────────────────────────────
         for (StreamDefinition streamDef : topology.getStreams()) {
-            // Filter to events for this stream only
-            DataStream<RawStreamEvent> streamEvents = encryptedStream
-                    .filter(event -> streamDef.getKey().equals(event.getStreamKey()))
-                    .name("filter-" + streamDef.getKey())
-                    .uid("filter-" + streamDef.getKey());
 
-            sinkBuilder.attachSink(streamEvents, streamDef);
-            LOG.info("Wired sink for stream: {}", streamDef.getKey());
+            // 4a. Source — type driven by source.type in YAML
+            DataStream<RawStreamEvent> raw = sourceFactory
+                    .buildSingleSource(streamDef, env);
+
+            // 4b. Quality chain — all rules driven by quality{} block in YAML
+            //     Returns a clean stream and a DLQ side-output stream
+            QualityChainResult quality = QualityChainBuilder.attach(raw, streamDef);
+
+            // 4c. PII encryption — sensitive fields from quality.sensitiveFields in YAML
+            DataStream<RawStreamEvent> encrypted = quality.clean()
+                    .map(new PIIEncryptionTransform(appConfig))
+                    .name("pii-encrypt-" + streamDef.getKey())
+                    .uid("pii-encrypt-" + streamDef.getKey())
+                    .setParallelism(appConfig.getIngestionParallelism());
+
+            // 4d. Sinks — all targets driven by sinks[] block in YAML
+            sinkFactory.attachAll(encrypted, streamDef);
+
+            // 4e. DLQ — route failed events to configured DLQ target
+            DlqSinkBuilder.attach(quality.dlq(), topology.getDlq(), appConfig);
+
+            LOG.info("Wired pipeline for stream '{}'", streamDef.getKey());
         }
 
-        // ── 6. Execute ────────────────────────────────────────────────────────
-        String jobName = appConfig.getProp("flink.job.name", "prysm-ingestion")
-                + "-" + appConfig.getEnv();
+        // ── 5. Execute ────────────────────────────────────────────────────────
+        String pipelineName = topology.getPipeline().getName() != null
+                ? topology.getPipeline().getName()
+                : appConfig.getProp("flink.job.name", "prysm-ingestion");
+        String jobName = pipelineName + "-" + appConfig.getEnv();
         LOG.info("Submitting job: {}", jobName);
         env.execute(jobName);
     }
 
-    // ── Environment setup ────────────────────────────────────────────────────
+    // ── Environment setup ─────────────────────────────────────────────────────
 
-    private StreamExecutionEnvironment buildEnv(AppConfig appConfig) {
+    private StreamExecutionEnvironment buildEnv(AppConfig appConfig,
+                                                 StreamTopologyConfig topology) {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        // Parallelism
-        env.setParallelism(appConfig.getDefaultParallelism());
+        // Parallelism — pipeline YAML overrides application.properties
+        int parallelism = topology.getPipeline().hasParallelismOverride()
+                ? topology.getPipeline().getParallelism()
+                : appConfig.getDefaultParallelism();
+        env.setParallelism(parallelism);
 
         // RocksDB state backend with incremental checkpoints to S3
         EmbeddedRocksDBStateBackend rocksDB = new EmbeddedRocksDBStateBackend(true);
         env.setStateBackend(rocksDB);
 
-        // Checkpointing
-        env.enableCheckpointing(appConfig.getCheckpointIntervalMs(), CheckpointingMode.EXACTLY_ONCE);
+        // Checkpointing — pipeline YAML overrides application.properties
+        long checkpointIntervalMs = topology.getPipeline().hasCheckpointOverride()
+                ? topology.getPipeline().getCheckpointIntervalMs()
+                : appConfig.getCheckpointIntervalMs();
+        env.enableCheckpointing(checkpointIntervalMs, CheckpointingMode.EXACTLY_ONCE);
+
         CheckpointConfig cc = env.getCheckpointConfig();
         cc.setCheckpointTimeout(300_000L);
         cc.setMinPauseBetweenCheckpoints(5_000L);
         cc.setMaxConcurrentCheckpoints(1);
         cc.setCheckpointStorage(appConfig.getCheckpointUri());
-        // Retain checkpoints on job cancellation so the job can resume from the last checkpoint
         cc.setExternalizedCheckpointCleanup(
                 CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 
