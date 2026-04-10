@@ -1,222 +1,729 @@
 # ============================================================
-# Prysm Kinesis → Flink stream topology
-# Stream ARNs and bucket names are resolved at runtime from
-# AWS SSM Parameter Store using the path pattern:
-#   /prysm/{env}/kinesis/stream/{streamKey}
-# This file contains only non-sensitive structural metadata.
+# Prysm Flink Pipeline — fully metadata-driven stream topology
+#
+# Every aspect of a stream's lifecycle is declared here:
+#   source connector config  →  schema  →  quality / prep rules  →  sinks
+#
+# The Flink engine reads this file once at startup and interprets
+# it to build the DAG.  Adding a new stream or changing a quality
+# rule NEVER requires a code change.
+#
+# Secret values (endpoints, tokens) reference AWS Secrets Manager
+# keys; actual values are NEVER stored in this file.
 # ============================================================
 
+pipeline:
+  name: prysm-streaming-platform
+
+# ── Dead-letter queue target ──────────────────────────────────────────────────
+dlq:
+  type: ICEBERG
+  catalogType: GLUE
+  database: system
+  table: dlq_events
+
+# ── Stream definitions ────────────────────────────────────────────────────────
 streams:
-  # --- Customer domain -------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # CUSTOMER DOMAIN
+  # ---------------------------------------------------------------------------
+
   - key: customer-profile
-    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-profile
-    avroSchema: customer-profile.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: CustomerProfile
-    icebergTable: customer.customer_profiles
-    partitionBy: [eventDate, countryCode]
-    sensitiveFields: [firstName, lastName, email, phone, dateOfBirth, ipAddress]
     streamType: CUSTOMER
-    efoConsumer: prysm-flink-customer-profile-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/customer-profile
+      efoConsumer: prysm-flink-customer-profile-{env}
+      watermarkLagSeconds: 30
+      idleTimeoutSeconds: 300
+    schema:
+      avroFile: customer-profile.avsc
+      glueSchemaName: CustomerProfile
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: eventId
+      dedupTtlHours: 48
+      requiredFields: [customerId, eventTime, eventType]
+      nullStrategy: FILL_DEFAULT
+      fieldDefaults:
+        schemaVersion: "1.0"
+        registrationSource: UNKNOWN
+      typeCoercions:
+        - field: eventTime
+          fromType: ISO8601_STRING
+          toType: EPOCH_MILLIS
+        - field: eventType
+          fromType: LOWERCASE_STRING
+          toType: UPPERCASE_ENUM
+      fieldValidations:
+        - field: email
+          rule: REGEX
+          pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+          onFail: DLQ
+        - field: countryCode
+          rule: REGEX
+          pattern: "^[A-Z]{2}$"
+          onFail: FILL_DEFAULT
+          defaultValue: "XX"
+      anomalyDetection: []
+      sensitiveFields: [firstName, lastName, email, phone, dateOfBirth, ipAddress]
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: customer
+        table: customer_profiles
+        partitionColumns: [eventDate, countryCode]
+        writeMode: APPEND
 
   - key: customer-preferences
-    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-preferences
-    avroSchema: customer-preferences.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: CustomerPreferences
-    icebergTable: customer.customer_preferences
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: CUSTOMER
-    efoConsumer: prysm-flink-customer-preferences-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/customer-preferences
+      efoConsumer: prysm-flink-customer-preferences-{env}
+      watermarkLagSeconds: 30
+      idleTimeoutSeconds: 300
+    schema:
+      avroFile: customer-preferences.avsc
+      glueSchemaName: CustomerPreferences
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: eventId
+      dedupTtlHours: 24
+      requiredFields: [customerId, eventTime]
+      nullStrategy: FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: customer
+        table: customer_preferences
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: customer-consent
-    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-consent
-    avroSchema: customer-consent.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: CustomerConsent
-    icebergTable: customer.customer_consent
-    partitionBy: [eventDate, consentType]
-    sensitiveFields: [ipAddress]
     streamType: CUSTOMER
-    efoConsumer: prysm-flink-customer-consent-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/customer-consent
+      efoConsumer: prysm-flink-customer-consent-{env}
+      watermarkLagSeconds: 30
+      idleTimeoutSeconds: 300
+    schema:
+      avroFile: customer-consent.avsc
+      glueSchemaName: CustomerConsent
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: eventId
+      dedupTtlHours: 24
+      requiredFields: [customerId, eventTime, consentType, consentGiven]
+      nullStrategy: DROP_RECORD
+      fieldValidations:
+        - field: consentType
+          rule: NOT_EMPTY
+          onFail: DLQ
+      sensitiveFields: [ipAddress]
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: customer
+        table: customer_consent
+        partitionColumns: [eventDate, consentType]
+        writeMode: APPEND
 
   - key: customer-loyalty
-    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-loyalty
-    avroSchema: customer-loyalty.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: CustomerLoyalty
-    icebergTable: customer.customer_loyalty
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: CUSTOMER
-    efoConsumer: prysm-flink-customer-loyalty-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/customer-loyalty
+      efoConsumer: prysm-flink-customer-loyalty-{env}
+      watermarkLagSeconds: 30
+      idleTimeoutSeconds: 300
+    schema:
+      avroFile: customer-loyalty.avsc
+      glueSchemaName: CustomerLoyalty
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: eventId
+      dedupTtlHours: 24
+      requiredFields: [customerId, eventTime]
+      nullStrategy: FILL_DEFAULT
+      fieldDefaults:
+        tier: STANDARD
+      fieldValidations:
+        - field: pointsDelta
+          rule: RANGE
+          min: -100000.0
+          max: 100000.0
+          onFail: DLQ
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: customer
+        table: customer_loyalty
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: customer-sessions
-    streamNameParamPath: /prysm/{env}/kinesis/stream/customer-sessions
-    avroSchema: customer-sessions.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: CustomerSession
-    icebergTable: customer.customer_sessions
-    partitionBy: [eventDate, platform]
-    sensitiveFields: []
     streamType: CUSTOMER
-    efoConsumer: prysm-flink-customer-sessions-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/customer-sessions
+      efoConsumer: prysm-flink-customer-sessions-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: customer-sessions.avsc
+      glueSchemaName: CustomerSession
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: sessionId
+      dedupTtlHours: 4
+      requiredFields: [customerId, sessionId, eventTime]
+      nullStrategy: FILL_DEFAULT
+      fieldDefaults:
+        platform: UNKNOWN
+      fieldValidations:
+        - field: platform
+          rule: ENUM_VALUE
+          allowedValues: [IOS, ANDROID, WEB, UNKNOWN]
+          onFail: FILL_DEFAULT
+          defaultValue: UNKNOWN
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: customer
+        table: customer_sessions
+        partitionColumns: [eventDate, platform]
+        writeMode: APPEND
 
-  # --- Scan domain -----------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # SCAN DOMAIN
+  # ---------------------------------------------------------------------------
+
   - key: scan-session
-    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-session
-    avroSchema: scan-session.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ScanSession
-    icebergTable: scan.scan_sessions
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: SCAN
-    efoConsumer: prysm-flink-scan-session-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/scan-session
+      efoConsumer: prysm-flink-scan-session-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: scan-session.avsc
+      glueSchemaName: ScanSession
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: scanId
+      dedupTtlHours: 2
+      requiredFields: [customerId, scanId, eventTime]
+      nullStrategy: DROP_RECORD
+      fieldValidations:
+        - field: deviceId
+          rule: NOT_EMPTY
+          onFail: DLQ
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: scan
+        table: scan_sessions
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: scan-facial
-    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-facial
-    avroSchema: scan-facial.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ScanFacial
-    icebergTable: scan.scan_facial
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: SCAN
-    efoConsumer: prysm-flink-scan-facial-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/scan-facial
+      efoConsumer: prysm-flink-scan-facial-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: scan-facial.avsc
+      glueSchemaName: ScanFacial
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: scanId
+      dedupTtlHours: 2
+      requiredFields: [scanId, customerId, eventTime]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: overallScore
+          rule: RANGE
+          min: 0.0
+          max: 100.0
+          onFail: DLQ
+      anomalyDetection:
+        - field: overallScore
+          method: STDDEV
+          windowMinutes: 60
+          threshold: 4.0
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: scan
+        table: scan_facial
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: scan-hydration
-    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-hydration
-    avroSchema: scan-hydration.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ScanHydration
-    icebergTable: scan.scan_hydration
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: SCAN
-    efoConsumer: prysm-flink-scan-hydration-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/scan-hydration
+      efoConsumer: prysm-flink-scan-hydration-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: scan-hydration.avsc
+      glueSchemaName: ScanHydration
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: scanId
+      dedupTtlHours: 2
+      requiredFields: [scanId, customerId, eventTime]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: hydrationScore
+          rule: RANGE
+          min: 0.0
+          max: 100.0
+          onFail: DLQ
+      anomalyDetection:
+        - field: hydrationScore
+          method: STDDEV
+          windowMinutes: 60
+          threshold: 4.0
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: scan
+        table: scan_hydration
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: scan-pigmentation
-    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-pigmentation
-    avroSchema: scan-pigmentation.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ScanPigmentation
-    icebergTable: scan.scan_pigmentation
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: SCAN
-    efoConsumer: prysm-flink-scan-pigmentation-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/scan-pigmentation
+      efoConsumer: prysm-flink-scan-pigmentation-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: scan-pigmentation.avsc
+      glueSchemaName: ScanPigmentation
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: scanId
+      dedupTtlHours: 2
+      requiredFields: [scanId, customerId, eventTime]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: pigmentationScore
+          rule: RANGE
+          min: 0.0
+          max: 100.0
+          onFail: DLQ
+      anomalyDetection:
+        - field: pigmentationScore
+          method: STDDEV
+          windowMinutes: 60
+          threshold: 4.0
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: scan
+        table: scan_pigmentation
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: scan-texture
-    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-texture
-    avroSchema: scan-texture.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ScanTexture
-    icebergTable: scan.scan_texture
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: SCAN
-    efoConsumer: prysm-flink-scan-texture-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/scan-texture
+      efoConsumer: prysm-flink-scan-texture-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: scan-texture.avsc
+      glueSchemaName: ScanTexture
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: scanId
+      dedupTtlHours: 2
+      requiredFields: [scanId, customerId, eventTime]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: textureScore
+          rule: RANGE
+          min: 0.0
+          max: 100.0
+          onFail: DLQ
+      anomalyDetection:
+        - field: textureScore
+          method: STDDEV
+          windowMinutes: 60
+          threshold: 4.0
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: scan
+        table: scan_texture
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: scan-wrinkles
-    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-wrinkles
-    avroSchema: scan-wrinkles.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ScanWrinkles
-    icebergTable: scan.scan_wrinkles
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: SCAN
-    efoConsumer: prysm-flink-scan-wrinkles-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/scan-wrinkles
+      efoConsumer: prysm-flink-scan-wrinkles-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: scan-wrinkles.avsc
+      glueSchemaName: ScanWrinkles
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: scanId
+      dedupTtlHours: 2
+      requiredFields: [scanId, customerId, eventTime]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: wrinkleScore
+          rule: RANGE
+          min: 0.0
+          max: 100.0
+          onFail: DLQ
+      anomalyDetection:
+        - field: wrinkleScore
+          method: STDDEV
+          windowMinutes: 60
+          threshold: 4.0
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: scan
+        table: scan_wrinkles
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: scan-radiance
-    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-radiance
-    avroSchema: scan-radiance.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ScanRadiance
-    icebergTable: scan.scan_radiance
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: SCAN
-    efoConsumer: prysm-flink-scan-radiance-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/scan-radiance
+      efoConsumer: prysm-flink-scan-radiance-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: scan-radiance.avsc
+      glueSchemaName: ScanRadiance
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: scanId
+      dedupTtlHours: 2
+      requiredFields: [scanId, customerId, eventTime]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: radianceScore
+          rule: RANGE
+          min: 0.0
+          max: 100.0
+          onFail: DLQ
+      anomalyDetection:
+        - field: radianceScore
+          method: STDDEV
+          windowMinutes: 60
+          threshold: 4.0
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: scan
+        table: scan_radiance
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: scan-overall
-    streamNameParamPath: /prysm/{env}/kinesis/stream/scan-overall
-    avroSchema: scan-overall.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ScanOverall
-    icebergTable: scan.scan_overall
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: SCAN
-    efoConsumer: prysm-flink-scan-overall-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/scan-overall
+      efoConsumer: prysm-flink-scan-overall-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 120
+    schema:
+      avroFile: scan-overall.avsc
+      glueSchemaName: ScanOverall
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: scanId
+      dedupTtlHours: 2
+      requiredFields: [scanId, customerId, eventTime]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: overallScore
+          rule: RANGE
+          min: 0.0
+          max: 100.0
+          onFail: DLQ
+      anomalyDetection:
+        - field: overallScore
+          method: STDDEV
+          windowMinutes: 60
+          threshold: 3.5
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: scan
+        table: scan_overall
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
-  # --- Product domain --------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # PRODUCT DOMAIN
+  # ---------------------------------------------------------------------------
+
   - key: product-catalog
-    streamNameParamPath: /prysm/{env}/kinesis/stream/product-catalog
-    avroSchema: product-catalog.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ProductCatalog
-    icebergTable: product.product_catalog
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: PRODUCT
-    efoConsumer: prysm-flink-product-catalog-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/product-catalog
+      efoConsumer: prysm-flink-product-catalog-{env}
+      watermarkLagSeconds: 30
+      idleTimeoutSeconds: 600
+    schema:
+      avroFile: product-catalog.avsc
+      glueSchemaName: ProductCatalog
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: productId
+      dedupTtlHours: 168
+      requiredFields: [productId, eventTime]
+      nullStrategy: FILL_DEFAULT
+      fieldDefaults:
+        status: ACTIVE
+      fieldValidations:
+        - field: price
+          rule: RANGE
+          min: 0.0
+          max: 100000.0
+          onFail: DLQ
+        - field: sku
+          rule: NOT_EMPTY
+          onFail: DLQ
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: product
+        table: product_catalog
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: product-recommendations
-    streamNameParamPath: /prysm/{env}/kinesis/stream/product-recommendations
-    avroSchema: product-recommendations.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ProductRecommendation
-    icebergTable: product.product_recommendations
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: PRODUCT
-    efoConsumer: prysm-flink-product-recommendations-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/product-recommendations
+      efoConsumer: prysm-flink-product-recommendations-{env}
+      watermarkLagSeconds: 30
+      idleTimeoutSeconds: 300
+    schema:
+      avroFile: product-recommendations.avsc
+      glueSchemaName: ProductRecommendation
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: recommendationId
+      dedupTtlHours: 24
+      requiredFields: [customerId, eventTime]
+      nullStrategy: FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: product
+        table: product_recommendations
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
   - key: product-interactions
-    streamNameParamPath: /prysm/{env}/kinesis/stream/product-interactions
-    avroSchema: product-interactions.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: ProductInteraction
-    icebergTable: product.product_interactions
-    partitionBy: [eventDate, interactionType]
-    sensitiveFields: []
     streamType: PRODUCT
-    efoConsumer: prysm-flink-product-interactions-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/product-interactions
+      efoConsumer: prysm-flink-product-interactions-{env}
+      watermarkLagSeconds: 15
+      idleTimeoutSeconds: 300
+    schema:
+      avroFile: product-interactions.avsc
+      glueSchemaName: ProductInteraction
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: interactionId
+      dedupTtlHours: 12
+      requiredFields: [customerId, productId, eventTime, interactionType]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: interactionType
+          rule: NOT_EMPTY
+          onFail: DLQ
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: product
+        table: product_interactions
+        partitionColumns: [eventDate, interactionType]
+        writeMode: APPEND
 
-  # --- Commerce domain -------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # COMMERCE DOMAIN
+  # ---------------------------------------------------------------------------
+
   - key: commerce-orders
-    streamNameParamPath: /prysm/{env}/kinesis/stream/commerce-orders
-    avroSchema: commerce-orders.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: CommerceOrder
-    icebergTable: commerce.orders
-    partitionBy: [eventDate, channel]
-    sensitiveFields: []
     streamType: COMMERCE
-    efoConsumer: prysm-flink-commerce-orders-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/commerce-orders
+      efoConsumer: prysm-flink-commerce-orders-{env}
+      watermarkLagSeconds: 30
+      idleTimeoutSeconds: 300
+    schema:
+      avroFile: commerce-orders.avsc
+      glueSchemaName: CommerceOrder
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: orderId
+      dedupTtlHours: 72
+      requiredFields: [orderId, customerId, eventTime, totalAmount]
+      nullStrategy: DROP_RECORD
+      fieldValidations:
+        - field: totalAmount
+          rule: RANGE
+          min: 0.0
+          max: 1000000.0
+          onFail: DLQ
+        - field: channel
+          rule: ENUM_VALUE
+          allowedValues: [ONLINE, RETAIL, DISTRIBUTOR, UNKNOWN]
+          onFail: FILL_DEFAULT
+          defaultValue: UNKNOWN
+      anomalyDetection:
+        - field: totalAmount
+          method: STDDEV
+          windowMinutes: 60
+          threshold: 5.0
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: commerce
+        table: orders
+        partitionColumns: [eventDate, channel]
+        writeMode: APPEND
 
   - key: commerce-returns
-    streamNameParamPath: /prysm/{env}/kinesis/stream/commerce-returns
-    avroSchema: commerce-returns.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: CommerceReturn
-    icebergTable: commerce.returns
-    partitionBy: [eventDate]
-    sensitiveFields: []
     streamType: COMMERCE
-    efoConsumer: prysm-flink-commerce-returns-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/commerce-returns
+      efoConsumer: prysm-flink-commerce-returns-{env}
+      watermarkLagSeconds: 30
+      idleTimeoutSeconds: 300
+    schema:
+      avroFile: commerce-returns.avsc
+      glueSchemaName: CommerceReturn
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: returnId
+      dedupTtlHours: 72
+      requiredFields: [returnId, orderId, customerId, eventTime]
+      nullStrategy: DROP_RECORD
+      fieldValidations:
+        - field: refundAmount
+          rule: RANGE
+          min: 0.0
+          max: 1000000.0
+          onFail: DLQ
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: commerce
+        table: returns
+        partitionColumns: [eventDate]
+        writeMode: APPEND
 
-  # --- Device domain ---------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # DEVICE DOMAIN
+  # ---------------------------------------------------------------------------
+
   - key: device-telemetry
-    streamNameParamPath: /prysm/{env}/kinesis/stream/device-telemetry
-    avroSchema: device-telemetry.avsc
-    glueRegistryName: prysm-{env}-registry
-    glueSchemaName: DeviceTelemetry
-    icebergTable: device.device_telemetry
-    partitionBy: [eventDate, eventType]
-    sensitiveFields: []
     streamType: DEVICE
-    efoConsumer: prysm-flink-device-telemetry-{env}
+    source:
+      type: KINESIS
+      streamNameParamPath: /prysm/{env}/kinesis/stream/device-telemetry
+      efoConsumer: prysm-flink-device-telemetry-{env}
+      watermarkLagSeconds: 10
+      idleTimeoutSeconds: 60
+    schema:
+      avroFile: device-telemetry.avsc
+      glueSchemaName: DeviceTelemetry
+      glueRegistryName: prysm-{env}-registry
+    quality:
+      dedupKey: telemetryId
+      dedupTtlHours: 1
+      requiredFields: [deviceId, eventTime, eventType]
+      nullStrategy: FORWARD
+      fieldValidations:
+        - field: batteryLevel
+          rule: RANGE
+          min: 0.0
+          max: 100.0
+          onFail: FILL_DEFAULT
+          defaultValue: "-1"
+        - field: firmwareVersion
+          rule: NOT_EMPTY
+          onFail: FILL_DEFAULT
+          defaultValue: UNKNOWN
+      anomalyDetection:
+        - field: batteryLevel
+          method: THRESHOLD
+          windowMinutes: 30
+          threshold: 5.0
+          onAnomaly: FLAG_AND_FORWARD
+        - field: signalStrength
+          method: STDDEV
+          windowMinutes: 30
+          threshold: 3.0
+          onAnomaly: FLAG_AND_FORWARD
+      sensitiveFields: []
+    sinks:
+      - type: ICEBERG
+        catalogType: GLUE
+        database: device
+        table: device_telemetry
+        partitionColumns: [eventDate, eventType]
+        writeMode: APPEND

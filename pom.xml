@@ -34,6 +34,12 @@
         <log4j.version>2.22.1</log4j.version>
         <junit.version>5.10.2</junit.version>
         <mockito.version>5.10.0</mockito.version>
+
+        <!-- Observability -->
+        <opentelemetry.version>1.36.0</opentelemetry.version>
+
+        <!-- Sink connectors (optional at runtime — guarded by Class.forName checks) -->
+        <arrow.version>15.0.2</arrow.version>
     </properties>
 
     <dependencyManagement>
@@ -235,6 +241,69 @@
         </dependency>
 
         <!-- ================================================================
+             OBSERVABILITY
+             OpenTelemetry API for span instrumentation in operators.
+             The Java agent (attached via JVM args) provides the SDK at runtime.
+             ================================================================ -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+            <version>${opentelemetry.version}</version>
+            <!-- optional: code compiles and runs without it; OtelSpanHelper degrades gracefully -->
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Flink Prometheus metrics reporter — no code changes needed;
+             configured entirely in application.properties -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-metrics-prometheus</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
+
+        <!-- ================================================================
+             OPTIONAL SINK CONNECTORS
+             Guarded by Class.forName() checks at runtime — add to enable.
+             ================================================================ -->
+
+        <!-- Apache Arrow Flight gRPC — required for DremioFlightSinkFunction -->
+        <!-- Uncomment to enable:
+        <dependency>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>flight-grpc</artifactId>
+            <version>${arrow.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-avro</artifactId>
+            <version>${arrow.version}</version>
+        </dependency>
+        -->
+
+        <!-- Delta Flink connector — required for DatabricksDeltaSinkFunction DELTA mode -->
+        <!-- Uncomment to enable:
+        <dependency>
+            <groupId>io.delta</groupId>
+            <artifactId>delta-flink</artifactId>
+            <version>3.1.0</version>
+        </dependency>
+        -->
+
+        <!-- Databricks JDBC driver — required for DatabricksDeltaSinkFunction JDBC mode -->
+        <!-- Uncomment to enable (download from Databricks and install in local Maven repo):
+        <dependency>
+            <groupId>com.databricks</groupId>
+            <artifactId>databricks-jdbc</artifactId>
+            <version>2.6.36</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-jdbc</artifactId>
+            <version>3.1.2-1.18</version>
+        </dependency>
+        -->
+
+        <!-- ================================================================
              TEST
              ================================================================ -->
         <dependency>
@@ -253,6 +322,13 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-test-utils</artifactId>
             <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-streaming-java</artifactId>
+            <version>${flink.version}</version>
+            <type>test-jar</type>
             <scope>test</scope>
         </dependency>
     </dependencies>

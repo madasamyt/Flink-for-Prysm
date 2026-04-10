@@ -5,16 +5,25 @@ version: "3.9"
 #
 # Services:
 #   localstack   — emulates Kinesis, S3, SSM, Secrets Manager, KMS, Glue
-#   flink-jm     — Flink JobManager
+#   flink-jm     — Flink JobManager (metrics on :9249)
 #   flink-tm     — Flink TaskManager (1 replica, scale as needed)
 #   init         — one-shot container that creates Kinesis streams,
 #                  S3 buckets, and SSM parameters in LocalStack
 #
+# Observability services (optional, start with --profile observability):
+#   prometheus   — scrapes Flink JM + TM metrics (:9090)
+#   grafana      — pre-provisioned Flink dashboard (:3000)
+#   otel-col     — OpenTelemetry collector (OTLP :4317 → Jaeger)
+#   jaeger       — distributed trace UI (:16686)
+#   marquez      — OpenLineage data lineage server (:5000)
+#
 # Usage:
-#   cp ../.env.example .env          # fill in your values
-#   docker compose up -d localstack  # start LocalStack first
-#   docker compose up init           # create AWS resources
+#   cp ../.env.example .env
+#   docker compose up -d localstack
+#   docker compose up init
 #   docker compose up flink-jm flink-tm
+#   # With full observability:
+#   docker compose --profile observability up -d
 #   # Submit a job:
 #   docker compose exec flink-jm flink run \
 #     -c com.nuskin.prysm.flink.PrysmPipelineMain \
@@ -29,14 +38,13 @@ services:
     image: localstack/localstack:3.4
     container_name: prysm-localstack
     ports:
-      - "4566:4566"   # unified endpoint
+      - "4566:4566"
     environment:
       - SERVICES=kinesis,s3,ssm,secretsmanager,kms,glue,sts
       - DEFAULT_REGION=us-east-1
-      - KINESIS_LATENCY=0          # disable artificial latency in dev
-      - KINESIS_INITIALIZE_STREAMS=# created by init container
+      - KINESIS_LATENCY=0
       - DEBUG=0
-      - PERSISTENCE=1              # persist state across restarts
+      - PERSISTENCE=1
     volumes:
       - localstack-data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
@@ -46,7 +54,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # ─── Init container: creates all AWS resources in LocalStack ─────────────
+  # ─── Init container ───────────────────────────────────────────────────────
   init:
     image: amazon/aws-cli:2.15.13
     container_name: prysm-init
@@ -67,12 +75,18 @@ services:
     image: apache/flink:1.18.1-java11
     container_name: prysm-flink-jm
     depends_on:
-      - localstack
+      localstack:
+        condition: service_healthy
     command: jobmanager
     ports:
-      - "8081:8081"   # Flink Web UI
+      - "8081:8081"    # Flink Web UI
+      - "9249:9249"    # Prometheus metrics endpoint
     environment:
-      - FLINK_PROPERTIES=jobmanager.rpc.address: flink-jm
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jm
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-east-1
@@ -83,7 +97,7 @@ services:
       - AWS_ENDPOINT_URL_KMS=http://localstack:4566
       - PRYSM_ENV=local
     volumes:
-      - ../target:/opt/flink/usrlib:ro   # mount built fat JAR
+      - ../target:/opt/flink/usrlib:ro
       - flink-checkpoints:/opt/flink/checkpoints
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
@@ -99,9 +113,15 @@ services:
       flink-jm:
         condition: service_healthy
     command: taskmanager
+    ports:
+      - "9250:9249"    # TM Prometheus metrics (mapped to host :9250)
     environment:
-      - FLINK_PROPERTIES=taskmanager.numberOfTaskSlots: 4
+      - |
+        FLINK_PROPERTIES=
+        taskmanager.numberOfTaskSlots: 4
         jobmanager.rpc.address: flink-jm
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-east-1
@@ -115,8 +135,76 @@ services:
       - ../target:/opt/flink/usrlib:ro
       - flink-checkpoints:/opt/flink/checkpoints
     deploy:
-      replicas: 1   # increase for more parallelism in local dev
+      replicas: 1
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OBSERVABILITY SERVICES — start with: docker compose --profile observability up
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── Prometheus: scrapes Flink JM + TM metrics ───────────────────────────
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v2.51.2
+    container_name: prysm-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+
+  # ─── Grafana: pre-provisioned Flink + pipeline dashboards ────────────────
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:10.4.2
+    container_name: prysm-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+
+  # ─── OpenTelemetry Collector: receives traces from Flink JVM agent ────────
+  otel-col:
+    profiles: ["observability"]
+    image: otel/opentelemetry-collector-contrib:0.99.0
+    container_name: prysm-otel-col
+    ports:
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+      - "8888:8888"    # Collector self-metrics
+    volumes:
+      - ./observability/otel-collector.yml:/etc/otel/config.yml:ro
+    command: ["--config=/etc/otel/config.yml"]
+
+  # ─── Jaeger: distributed trace UI ────────────────────────────────────────
+  jaeger:
+    profiles: ["observability"]
+    image: jaegertracing/all-in-one:1.57
+    container_name: prysm-jaeger
+    depends_on:
+      - otel-col
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14250:14250"  # gRPC receiver from OTEL collector
+
+  # ─── Marquez: OpenLineage data lineage server ─────────────────────────────
+  marquez:
+    profiles: ["observability"]
+    image: marquezproject/marquez:0.47.0
+    container_name: prysm-marquez
+    ports:
+      - "5000:5000"    # Marquez API + lineage ingestion endpoint
+      - "5001:5001"    # Marquez Web UI
 
 volumes:
   localstack-data:
   flink-checkpoints:
+  grafana-data:
